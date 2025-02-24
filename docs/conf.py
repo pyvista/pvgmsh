@@ -40,8 +40,7 @@ if on_rtd:
 
 # The full version, including alpha/beta/rc tags
 release = get_version("scikit-gmsh")
-if release.endswith("+dirty"):
-    release = release[: -len("+dirty")]
+release = release.removesuffix("+dirty")
 
 # docs src directory
 src_dir = Path(__file__).absolute().parent
