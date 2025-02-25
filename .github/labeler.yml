@@ -5,11 +5,9 @@ documentation:
           - any-glob-to-any-file: "*.rst"
           - any-glob-to-any-file: "docs/**/*"
           - any-glob-to-any-file: "examples/**/*"
-          - any-glob-to-any-file: "examples_trame/**/*"
 maintenance:
   - any:
       - changed-files:
-          - any-glob-to-any-file: ".flake8"
           - any-glob-to-any-file: ".github/**/*"
           - any-glob-to-any-file: ".pre-commit-config.yaml"
           - any-glob-to-any-file: "Makefile"
