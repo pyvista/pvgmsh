@@ -24,6 +24,9 @@ The library has following main objectives:
 1. Provide an intuitive, object-oriented API for mesh creation like [scipy.spatial.Delaunay class](https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.Delaunay.html).
 1. Integrate seamlessly with other libraries in the [Scientific Python ecosystem](https://scientific-python.org/).
 
+`scikit-gmsh` does not use the PythonAPI of gmsh.
+This library provides a Python interface for creating geometry files and executing them with the gmsh command.
+
 ## Installation
 
 [![pypi](https://img.shields.io/pypi/v/scikit-gmsh?label=pypi&logo=python&logoColor=white)](https://pypi.org/project/scikit-gmsh/)
