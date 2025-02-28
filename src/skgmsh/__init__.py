@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from typing import Optional
 
 import gmsh
+import numpy as np
 from pygmsh.helpers import extract_to_meshio
 import pyvista as pv
 import scooby
@@ -16,6 +17,8 @@ import shapely
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from numpy.typing import ArrayLike
 
 INITIAL_MESH_ONLY_2D = 3
 FRONTAL_DELAUNAY_2D = 6
@@ -196,7 +199,7 @@ def delaunay_3d(
 
 def frontal_delaunay_2d(  # noqa: C901, PLR0912
     edge_source: pv.PolyData | shapely.geometry.Polygon,
-    target_sizes: float | Sequence[float] | None = None,
+    target_sizes: float | ArrayLike | None = None,
     recombine: bool = False,  # noqa: FBT001, FBT002
 ) -> pv.UnstructuredGrid | None:
     """
@@ -212,7 +215,7 @@ def frontal_delaunay_2d(  # noqa: C901, PLR0912
         (i.e. point ids are identical in the input and
         source).
 
-    target_sizes : float
+    target_sizes : float | ArrayLike
         Target mesh size close to the points.
         Default max size of edge_source in each direction.
 
@@ -244,14 +247,17 @@ def frontal_delaunay_2d(  # noqa: C901, PLR0912
 
     if isinstance(edge_source, shapely.geometry.Polygon):
         wire_tags = []
-        for linearring in [edge_source.exterior, *list(edge_source.interiors)]:
+
+        if isinstance(target_sizes, float):
+            target_sizes = [target_sizes] * (len(edge_source.interiors) + 1)
+
+        for target_size, linearring in zip(target_sizes, [edge_source.exterior, *list(edge_source.interiors)]):
+            sizes = [target_size] * (len(linearring.coords) - 1) if isinstance(target_size, float) else target_size
             coords = linearring.coords[:-1].copy()
             tags = []
-            for coord in coords:
-                x = coord[0]
-                y = coord[1]
-                z = coord[2]
-                tags.append(gmsh.model.geo.add_point(x, y, z, target_sizes))
+            for size, coord in zip(sizes, coords):
+                x, y, z = coord
+                tags.append(gmsh.model.geo.add_point(x, y, z, size))
             curve_tags = []
             for i, _ in enumerate(tags):
                 start_tag = tags[i - 1]
@@ -317,10 +323,13 @@ class Delaunay2D:
 
     holes : sequence
         A sequence of objects which satisfy the same requirements as the
-        shell parameters above
+        shell parameters above.
 
-    cell_size : float
+    cell_size : float | ArrayLike
        Meshing constraint at point.
+
+    constrain_edge_size : bool
+        If True, cell size at points are set to their maximum edge length.
 
     Notes
     -----
@@ -334,14 +343,36 @@ class Delaunay2D:
         edge_source: pv.PolyData | shapely.Polygon | None = None,
         shell: Sequence[tuple[int]] | None = None,
         holes: Sequence[tuple[int]] | None = None,
-        cell_size: float | None = None,
+        cell_size: float | ArrayLike | None = None,
+        constrain_edge_size: bool = False,
     ) -> None:
         """Initialize the Delaunay2D class."""
         if edge_source is not None:
             self._edge_source = edge_source
         else:
             self._edge_source = shapely.Polygon(shell, holes)
+
+        if constrain_edge_size:
+            if isinstance(self.edge_source, shapely.Polygon):
+                cell_size = [self._compute_cell_size_from_points(self.edge_source.exterior.coords)]
+                cell_size += [self._compute_cell_size_from_points(hole.coords) for hole in self.edge_source.interiors]
+
+            else:
+                # Only the first line is processed
+                lines = edge_source.lines
+                line = lines[1 : lines[0] + 1]
+                edge_points = edge_source.points[line]
+                cell_size = self._compute_cell_size_from_points(edge_points)
+
         self._cell_size = cell_size
+
+    @staticmethod
+    def _compute_cell_size_from_points(points: ArrayLike) -> ArrayLike:
+        """Compute cell size from points array."""
+        lengths = np.linalg.norm(np.diff(points, axis=0), axis=-1)
+        lengths = np.insert(lengths, 0, lengths[-1])
+
+        return np.maximum(lengths[:-1], lengths[1:])
 
     @property
     def edge_source(self: Delaunay2D) -> pv.PolyData | shapely.geometry.Polygon:
@@ -355,12 +386,12 @@ class Delaunay2D:
         return pv.PolyData(mesh.points, mesh.cells)
 
     @property
-    def cell_size(self: Delaunay2D) -> float | None:
+    def cell_size(self: Delaunay2D) -> float | ArrayLike | None:
         """Get the cell_size of the mesh."""
         return self._cell_size
 
     @cell_size.setter
-    def cell_size(self: Delaunay2D, size: int) -> None:
+    def cell_size(self: Delaunay2D, size: float | ArrayLike | None) -> None:
         """Set the cell_size of the mesh."""
         self._cell_size = size
 
