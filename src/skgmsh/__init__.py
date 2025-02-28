@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from typing import Optional
 
 import gmsh
-from pygmsh.helpers import extract_to_meshio
 import pyvista as pv
 import scooby
 import shapely
@@ -178,11 +177,7 @@ def delaunay_3d(
     gmsh.model.geo.add_volume([1], 1)
 
     gmsh.model.geo.synchronize()
-    gmsh.model.mesh.generate(3)
-
-    mesh = pv.wrap(extract_to_meshio())
-    gmsh.clear()
-    gmsh.finalize()
+    mesh = generate_mesh(3)
 
     ind = []
     for i, cell in enumerate(mesh.cell):
@@ -283,10 +278,7 @@ def frontal_delaunay_2d(  # noqa: C901, PLR0912
     if recombine:
         gmsh.model.mesh.set_recombine(2, 1)
 
-    gmsh.model.mesh.generate(2)
-    mesh = pv.from_meshio(extract_to_meshio())
-    gmsh.clear()
-    gmsh.finalize()
+    mesh = generate_mesh(2)
 
     ind = []
     for index, cell in enumerate(mesh.cell):
@@ -294,6 +286,62 @@ def frontal_delaunay_2d(  # noqa: C901, PLR0912
             ind.append(index)
 
     return mesh.remove_cells(ind)
+
+
+def generate_mesh(dim: int) -> pv.UnstructuredGrid:
+    """
+    Generate a mesh of the current model.
+
+    Parameters
+    ----------
+    dim : int
+        Mesh dimension.
+
+    Returns
+    -------
+    pyvista.UnstructuredGrid
+        Generated mesh.
+
+    """
+    import numpy as np
+
+    gmsh_to_pyvista_type = {
+        1: pv.CellType.LINE,
+        2: pv.CellType.TRIANGLE,
+        3: pv.CellType.QUAD,
+        4: pv.CellType.TETRA,
+        5: pv.CellType.HEXAHEDRON,
+        6: pv.CellType.WEDGE,
+        7: pv.CellType.PYRAMID,
+        15: pv.CellType.VERTEX,
+    }
+
+    try:
+        gmsh.model.mesh.generate(dim)
+        node_tags, coord, _ = gmsh.model.mesh.getNodes()
+        element_types, element_tags, element_node_tags = gmsh.model.mesh.getElements()
+
+        # Points
+        assert (np.diff(node_tags) > 0).all()  # noqa: S101
+        points = np.reshape(coord, (-1, 3))
+
+        # Cells
+        cells = {}
+
+        for type_, tags, node_tags in zip(element_types, element_tags, element_node_tags):
+            assert (np.diff(tags) > 0).all()  # noqa: S101
+
+            celltype = gmsh_to_pyvista_type[type_]
+            num_nodes = gmsh.model.mesh.getElementProperties(type_)[3]
+            cells[celltype] = np.reshape(node_tags, (-1, num_nodes)) - 1
+
+        mesh = pv.UnstructuredGrid(cells, points)
+
+    finally:
+        gmsh.clear()
+        gmsh.finalize()
+
+    return mesh
 
 
 class Delaunay2D:
